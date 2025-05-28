@@ -1,5 +1,4 @@
 import axios from "axios";
-
 import huggingface from "../config/huggingface.js";
 
 export default async function getVectorEmbeddings (context) {
