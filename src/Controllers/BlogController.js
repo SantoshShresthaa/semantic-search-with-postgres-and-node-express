@@ -3,7 +3,6 @@ import Blog from "../models/blogs.js";
 import getVectorEmbeddings from "../helpers/vectorEmbeddings.js";
 import { sequelize } from "../config/database.js";
 import fs from "fs";
-import { exit } from "process";
 export const index = async (req, res) => {
     var blogs = await Blog.findAll();
     return res.json({
@@ -38,7 +37,6 @@ export const store = async (req, res) => {
 
         });
     }catch (err) {
-        console.log(err);
         return res.status(500).json({
             status: false,
             message: "Something went wrong!!!"
@@ -51,12 +49,11 @@ export const search = async (req, res) => {
     const searchRequest = req.query.query;
 
     const getVector =  await getVectorEmbeddings(searchRequest);
-    console.log(getVector);
+
     const getResult = await sequelize.query(
         `SELECT id,title,content,author,status, 
          (embedding <=> $1) as similarity 
-         FROM blogs 
-         WHERE (embedding <=> $1) < 1
+         FROM blogs
          ORDER BY similarity ASC 
          LIMIT 10`,
     {
@@ -75,40 +72,43 @@ export const search = async (req, res) => {
 }
 
 export const importFromFile = async (req, res) => {
-   try {
-    const readData = fs.readFileSync('./sample-data.json', 'utf8');
+  const t = await sequelize.transaction();
+
+  try {
+    const readData = fs.readFileSync("./blogs-dataset.json", "utf8");
 
     const blogs = JSON.parse(readData);
 
-    const mapBlog = blogs.map(async (blog) => {
+    const mapBlog = blogs.map((blog) => {
+      // const getEmbedding = await getVectorEmbeddings(blog.content);
 
-        console.log(blog.content);
-        // const getEmbedding = await getVectorEmbeddings(blog.content);
-
-        return {
-            title: blog.title,
-            content: blog.content,
-            author: blog.author,
-            status: blog.status === "published" ? true : false,
-            // embedding: JSON.stringify(getEmbedding.data), // Store only the vector data
-            publishedAt: now(),
-            createdAt: now(),
-            updatedAt: now()
-        }
+      return {
+        title: blog.title,
+        content: blog.content,
+        author: blog.author,
+        status: blog.status === "published" ? true : false,
+        embedding: blog.embedding,
+        publishedAt: now(),
+        createdAt: now(),
+        updatedAt: now(),
+      };
     });
 
-    const getBlogs = await Promise.all(mapBlog);
+    await Blog.bulkCreate(mapBlog);
 
+    t.commit();
 
     return res.json({
-        data: getBlogs
+      success: true,
+      message: "Data added successfully"
     });
-   }catch(error) {
-    return res.status(500).json({
-        status : false,
-        message : "Something went wrong",
-        error : error
-    })
-   }
+  } catch (error) {
+    await t.rollback();
 
-}
+    return res.status(500).json({
+      status: false,
+      message: "Something went wrong",
+      error: error,
+    });
+  }
+};
